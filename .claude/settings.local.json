@@ -4,7 +4,10 @@
       "mcp__Zapier-MCP__execute_zapier_write_action",
       "Bash(python -c ' *)",
       "Bash(python refresh_all_periods.py)",
-      "Bash(python -m pip freeze)"
+      "Bash(python -m pip freeze)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
     ]
   }
 }
