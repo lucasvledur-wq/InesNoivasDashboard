@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from data_service import (
     load_campaigns, load_adgroups,
     load_ga4_pages, load_ga4_daily, load_ga4_channels,
-    load_ads_daily, load_keywords, load_meta,
+    load_ads_daily, load_keywords, load_meta, load_meta_creatives,
 )
 
 st.set_page_config(
@@ -136,8 +136,9 @@ ga4_pages_df   = load_ga4_pages(period)
 ga4_daily_df   = load_ga4_daily(period)
 ga4_channels_df = load_ga4_channels(period)
 ads_daily_df   = load_ads_daily(period)
-keywords_df    = load_keywords(period)
-meta_df        = load_meta(period)
+keywords_df        = load_keywords(period)
+meta_df            = load_meta(period)
+meta_creatives_df  = load_meta_creatives(period)
 
 # ── Main tabs ──
 tab_google, tab_ga4, tab_meta = st.tabs([
@@ -410,10 +411,14 @@ with tab_ga4:
             st.caption("Whatsapp LP = cliques no botão de WhatsApp da página. Generate Lead = formulário de lead preenchido.")
 
             has_ev = "Whatsapp LP" in ga4_pages_df.columns
+            has_sess = "Avg. Session (s)" in ga4_pages_df.columns
             col1, col2 = st.columns([3, 2])
             with col1:
                 pg_fmt = {"Pageviews": "{:,.0f}"}
                 pg_cols = ["Page","Pageviews"]
+                if has_sess:
+                    pg_cols.append("Avg. Session (s)")
+                    pg_fmt["Avg. Session (s)"] = "{:.0f}s"
                 if has_ev:
                     pg_cols += ["Whatsapp LP","Generate Lead"]
                     pg_fmt.update({"Whatsapp LP": "{:,.0f}", "Generate Lead": "{:,.0f}"})
@@ -424,7 +429,19 @@ with tab_ga4:
                     use_container_width=True, hide_index=True,
                 )
             with col2:
-                if has_ev:
+                if has_sess:
+                    sess_data = ga4_pages_df[ga4_pages_df["Avg. Session (s)"] > 0].sort_values("Avg. Session (s)", ascending=True).tail(10)
+                    if not sess_data.empty:
+                        fig = go.Figure(go.Bar(
+                            y=sess_data["Page"], x=sess_data["Avg. Session (s)"], orientation="h",
+                            marker_color=BLUE,
+                            text=[f"{int(v//60)}m{int(v%60)}s" for v in sess_data["Avg. Session (s)"]],
+                            textposition="auto",
+                        ))
+                        fig.update_layout(height=300, margin=dict(t=10,b=20,l=10), template="plotly_white",
+                            xaxis_title="Tempo médio (s)", yaxis_title="")
+                        st.plotly_chart(fig, use_container_width=True)
+                elif has_ev:
                     ev_ch = ga4_pages_df[ga4_pages_df["Whatsapp LP"] > 0].sort_values("Whatsapp LP", ascending=True)
                     if not ev_ch.empty:
                         fig = go.Figure()
@@ -500,19 +517,20 @@ with tab_meta:
         meta_follow = _m("Seguidores Novos")
         meta_cpf    = meta_cost / meta_follow if meta_follow > 0 else 0
 
-        c = st.columns(4)
+        c = st.columns(5)
         c[0].markdown(kpi("💰 Investimento", f"R$ {meta_cost:,.0f}", "meta"), unsafe_allow_html=True)
         c[1].markdown(kpi("👁️ Impressões", f"{meta_imp:,.0f}", sub="vezes exibido"), unsafe_allow_html=True)
         c[2].markdown(kpi("🎯 Alcance", f"{meta_reach:,.0f}", sub="pessoas únicas"), unsafe_allow_html=True)
-        c[3].markdown(kpi("📈 CTR", f"{meta_ctr:.1f}%", sub="taxa de clique"), unsafe_allow_html=True)
+        c[3].markdown(kpi("💬 Mensagens WhatsApp", f"{meta_msgs:,.0f}", "gold"), unsafe_allow_html=True)
+        c[4].markdown(kpi("💲 Custo/Mensagem", f"R$ {meta_cpm:.2f}" if meta_msgs > 0 else "—", "gold", sub="por conversa iniciada"), unsafe_allow_html=True)
 
         st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
 
         c = st.columns(4)
         c[0].markdown(kpi("🖱️ Cliques no Link", f"{meta_clicks:,.0f}", sub=f"R$ {meta_cpc:.2f} por clique"), unsafe_allow_html=True)
-        c[1].markdown(kpi("💬 Mensagens WhatsApp", f"{meta_msgs:,.0f}", "gold", sub=f"R$ {meta_cpm:.2f} por mensagem"), unsafe_allow_html=True)
+        c[1].markdown(kpi("📈 CTR", f"{meta_ctr:.1f}%", sub="taxa de clique no link"), unsafe_allow_html=True)
         c[2].markdown(kpi("📸 Visitas ao Perfil", f"{meta_prof:,.0f}", sub=f"R$ {meta_cpp:.2f} por visita"), unsafe_allow_html=True)
-        c[3].markdown(kpi("➕ Seguidores Novos", f"{meta_follow:,.0f}", "green", sub=f"R$ {meta_cpf:.2f} por seguidor"), unsafe_allow_html=True)
+        c[3].markdown(kpi("➕ Curtidas / Engajamento", f"{meta_follow:,.0f}", "green", sub="novas curtidas na página"), unsafe_allow_html=True)
 
         # ── Performance por Conjunto de Anúncios ──
         if "Conjunto" in meta_df.columns:
@@ -551,6 +569,95 @@ with tab_meta:
                 yaxis2=dict(title="Mensagens", overlaying="y", side="right"),
                 legend=dict(orientation="h", y=1.12))
             st.plotly_chart(fig, use_container_width=True)
+
+        # ── Criativos que Melhor Performaram ──
+        if not meta_creatives_df.empty:
+            sec("Criativos que Melhor Performaram")
+            st.caption("Anúncios com mais mensagens WhatsApp iniciadas no período — os criativos que realmente convertem.")
+            sum_cols_cr = [c for c in ["Investimento (R$)","Impressões","Alcance","Cliques no Link",
+                                       "Mensagens WhatsApp","Engajamento"] if c in meta_creatives_df.columns]
+            cr_grouped = meta_creatives_df.groupby("Anúncio")[sum_cols_cr].sum().reset_index()
+            if "Investimento (R$)" in cr_grouped.columns and "Mensagens WhatsApp" in cr_grouped.columns:
+                cr_grouped["Custo/Mensagem (R$)"] = (
+                    cr_grouped["Investimento (R$)"] / cr_grouped["Mensagens WhatsApp"].replace(0, float("nan"))
+                ).round(2)
+            if "Cliques no Link" in cr_grouped.columns and "Impressões" in cr_grouped.columns:
+                cr_grouped["CTR (%)"] = (cr_grouped["Cliques no Link"] / cr_grouped["Impressões"].replace(0, float("nan")) * 100).round(2)
+
+            cr_display = cr_grouped[cr_grouped["Mensagens WhatsApp"] > 0].sort_values("Mensagens WhatsApp", ascending=False).head(15)
+
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                cr_cols = ["Anúncio","Mensagens WhatsApp","Custo/Mensagem (R$)","Investimento (R$)","Impressões","CTR (%)","Engajamento"]
+                cr_av = [c for c in cr_cols if c in cr_display.columns]
+                cr_fmt = {"Mensagens WhatsApp": "{:.0f}", "Custo/Mensagem (R$)": "R$ {:.2f}",
+                          "Investimento (R$)": "R$ {:.2f}", "Impressões": "{:,.0f}", "CTR (%)": "{:.1f}%",
+                          "Engajamento": "{:,.0f}"}
+                st.dataframe(
+                    cr_display[cr_av].style.format({k: v for k, v in cr_fmt.items() if k in cr_av}, na_rep="—"),
+                    use_container_width=True, hide_index=True,
+                )
+            with col2:
+                if not cr_display.empty:
+                    top8 = cr_display.head(8).copy()
+                    top8["Anúncio_short"] = top8["Anúncio"].str[-40:]
+                    fig = go.Figure(go.Bar(
+                        y=top8["Anúncio_short"], x=top8["Mensagens WhatsApp"], orientation="h",
+                        marker_color=META_PINK, text=top8["Mensagens WhatsApp"].astype(int).astype(str),
+                        textposition="auto",
+                    ))
+                    fig.update_layout(height=320, margin=dict(t=10,b=20,l=10), template="plotly_white",
+                        yaxis=dict(autorange="reversed"), xaxis_title="Mensagens iniciadas")
+                    st.plotly_chart(fig, use_container_width=True)
+
+        # ── Destaques & Recomendações Meta ──
+        sec("Destaques & Recomendações — Meta")
+        meta_insights, meta_alerts, meta_tests = [], [], []
+
+        if meta_cost > 0 and meta_msgs > 0:
+            cpm_val = meta_cost / meta_msgs
+            if cpm_val < 10:
+                meta_insights.append(f"<b>Custo por mensagem de R$ {cpm_val:.2f}</b> — excelente para o segmento de noivas. Escalar investimento pode gerar volume maior a custo similar.")
+            elif cpm_val < 25:
+                meta_insights.append(f"<b>Custo por mensagem de R$ {cpm_val:.2f}</b> — saudável. Foco em testar criativos para reduzir ainda mais.")
+            else:
+                meta_alerts.append(f"<b>Custo por mensagem de R$ {cpm_val:.2f}</b> — acima do ideal. Revisar criativos e públicos pode reduzir significativamente.")
+
+        if meta_ctr > 0:
+            if meta_ctr > 3:
+                meta_insights.append(f"<b>CTR de {meta_ctr:.1f}%</b> — acima da média do setor. Os criativos estão gerando interesse real.")
+            elif meta_ctr < 1:
+                meta_alerts.append(f"<b>CTR de {meta_ctr:.1f}%</b> — baixo. Os criativos precisam de revisão — teste imagens dos vestidos com provas sociais.")
+
+        if meta_reach > 0 and meta_imp > 0:
+            freq = meta_imp / meta_reach
+            if freq > 5:
+                meta_alerts.append(f"<b>Frequência média de {freq:.1f}x</b> — o público está saturado. Expandir audiências ou renovar criativos evita fadiga.")
+            elif freq < 2:
+                meta_insights.append(f"<b>Frequência de {freq:.1f}x</b> — audiência fresca, há espaço para aumentar o orçamento sem saturar.")
+
+        meta_tests = [
+            ("🧪 Vídeos curtos de vestidos (Reels)", "Teste criativos de 15-30s mostrando os vestidos em movimento. Reels têm CPM mais barato e alto engajamento para moda nupcial."),
+            ("🧪 Depoimentos de noivas", "Anúncios com noivas reais contando sua experiência geram alta confiança e reduzem o custo por mensagem."),
+            ("🧪 Oferta de consulta gratuita", "CTA 'Agende sua visita gratuita' com urgência limitada (ex.: 'apenas 5 vagas') pode aumentar a taxa de conversão em cliques para mensagem."),
+            ("🧪 Público lookalike de clientes", "Criar lookalike a partir da lista de clientes que fecharam negócio tende a ser mais eficiente que lookalike de visitantes do site."),
+        ]
+
+        if meta_alerts:
+            st.markdown("##### ⚠️ Pontos de Atenção")
+            for a in meta_alerts:
+                st.markdown(f'<div class="alert-box">{a}</div>', unsafe_allow_html=True)
+
+        if meta_insights:
+            st.markdown("##### ✅ Destaques do Período")
+            for i in meta_insights:
+                st.markdown(f'<div class="ok-box">{i}</div>', unsafe_allow_html=True)
+
+        st.markdown("##### 🔬 Testes Recomendados")
+        cols_mt = st.columns(2)
+        for i, (title, desc) in enumerate(meta_tests):
+            with cols_mt[i % 2]:
+                st.markdown(f'<div class="test-card"><div class="t-title">{title}</div><div class="t-desc">{desc}</div></div>', unsafe_allow_html=True)
 
 # ── Footer ──
 st.markdown("---")
