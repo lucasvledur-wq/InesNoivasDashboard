@@ -308,3 +308,13 @@ def load_keywords(days: int) -> pd.DataFrame:
     if cached is not None:
         return cached
     return pd.DataFrame()
+
+
+def load_meta(days: int) -> pd.DataFrame:
+    cached = _read_cache("meta", days)
+    if cached is not None:
+        df = cached
+        if "Data" in df.columns:
+            df["Data"] = pd.to_datetime(df["Data"])
+        return df
+    return pd.DataFrame()
