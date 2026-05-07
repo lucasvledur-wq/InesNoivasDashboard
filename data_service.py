@@ -325,3 +325,20 @@ def load_meta(days: int) -> pd.DataFrame:
             df["Data"] = pd.to_datetime(df["Data"])
         return df
     return pd.DataFrame()
+
+
+def load_instagram(days: int) -> pd.DataFrame:
+    cached = _read_cache("instagram", days)
+    if cached is not None:
+        df = cached
+        if "Data" in df.columns:
+            df["Data"] = pd.to_datetime(df["Data"])
+        return df
+    return pd.DataFrame()
+
+
+def load_instagram_media(days: int) -> pd.DataFrame:
+    cached = _read_cache("instagram_media", days)
+    if cached is not None:
+        return cached
+    return pd.DataFrame()

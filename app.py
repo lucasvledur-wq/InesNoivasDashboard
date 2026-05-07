@@ -7,6 +7,7 @@ from data_service import (
     load_campaigns, load_adgroups,
     load_ga4_pages, load_ga4_daily, load_ga4_channels,
     load_ads_daily, load_keywords, load_meta, load_meta_creatives,
+    load_instagram, load_instagram_media,
 )
 
 st.set_page_config(
@@ -24,6 +25,8 @@ RED = "#e74c3c"
 GREEN = "#27ae60"
 META_BLUE = "#1877F2"
 META_PINK = "#E1306C"
+INSTA_PURPLE = "#833AB4"
+INSTA_ORANGE = "#F56040"
 
 st.markdown(f"""
 <style>
@@ -139,12 +142,15 @@ ads_daily_df   = load_ads_daily(period)
 keywords_df        = load_keywords(period)
 meta_df            = load_meta(period)
 meta_creatives_df  = load_meta_creatives(period)
+instagram_df       = load_instagram(period)
+instagram_media_df = load_instagram_media(period)
 
 # ── Main tabs ──
-tab_google, tab_ga4, tab_meta = st.tabs([
+tab_google, tab_ga4, tab_meta, tab_insta = st.tabs([
     "📊  Google Ads",
     "🌐  GA4 — Site",
     "📱  Meta (Instagram & Facebook)",
+    "📸  Instagram Orgânico",
 ])
 
 
@@ -719,6 +725,154 @@ with tab_meta:
         cols_mt = st.columns(2)
         for i, (title, desc) in enumerate(meta_tests):
             with cols_mt[i % 2]:
+                st.markdown(f'<div class="test-card"><div class="t-title">{title}</div><div class="t-desc">{desc}</div></div>', unsafe_allow_html=True)
+
+# =============================================================================
+# TAB 4 — INSTAGRAM ORGÂNICO
+# =============================================================================
+with tab_insta:
+
+    if instagram_df.empty:
+        st.markdown("""
+        <div class="no-data">
+            <div style="font-size:2rem;margin-bottom:0.5rem">📸</div>
+            <b style="font-size:1rem">Dados do Instagram Orgânico não disponíveis</b><br><br>
+            Para ativar esta aba, peça ao Claude Code:<br>
+            <i>"Atualize os dados do Instagram orgânico"</i>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        def _ig(col): return instagram_df[col].sum() if col in instagram_df.columns else 0
+        def _iga(col): return instagram_df[col].mean() if col in instagram_df.columns else 0
+
+        ig_reach   = _ig("Alcance")
+        ig_views   = _ig("Visualizacoes")
+        ig_likes   = _ig("Curtidas")
+        ig_comments = _ig("Comentarios")
+        ig_saves   = _ig("Salvos")
+        ig_shares  = _ig("Compartilhamentos")
+        ig_replies = _ig("Respostas")
+        ig_interactions = _ig("Interacoes Totais")
+        ig_followers = _ig("Novos Seguidores")
+        ig_eng_rate = (ig_interactions / ig_reach * 100) if ig_reach > 0 else 0
+
+        c = st.columns(5)
+        c[0].markdown(kpi("🎯 Alcance", f"{ig_reach:,.0f}", sub="contas alcançadas"), unsafe_allow_html=True)
+        c[1].markdown(kpi("👁️ Visualizações", f"{ig_views:,.0f}", sub="plays + exibições"), unsafe_allow_html=True)
+        c[2].markdown(kpi("❤️ Curtidas", f"{ig_likes:,.0f}"), unsafe_allow_html=True)
+        c[3].markdown(kpi("💬 Comentários", f"{ig_comments:,.0f}"), unsafe_allow_html=True)
+        c[4].markdown(kpi("🔄 Compartilhamentos", f"{ig_shares:,.0f}", "gold"), unsafe_allow_html=True)
+
+        st.markdown("<div style='height:0.4rem'></div>", unsafe_allow_html=True)
+
+        c = st.columns(5)
+        c[0].markdown(kpi("🔖 Salvos", f"{ig_saves:,.0f}", sub="posts salvos"), unsafe_allow_html=True)
+        c[1].markdown(kpi("💡 Interações Totais", f"{ig_interactions:,.0f}", "gold"), unsafe_allow_html=True)
+        c[2].markdown(kpi("📈 Taxa de Engajamento", f"{ig_eng_rate:.2f}%", "green" if ig_eng_rate > 3 else ""), unsafe_allow_html=True)
+        c[3].markdown(kpi("➕ Novos Seguidores", f"{ig_followers:,.0f}", "green"), unsafe_allow_html=True)
+        c[4].markdown(kpi("💬 Respostas Stories", f"{ig_replies:,.0f}"), unsafe_allow_html=True)
+
+        # ── Tendência Diária Instagram ──
+        if "Data" in instagram_df.columns:
+            sec("Tendência Diária — Instagram Orgânico")
+            ig_daily = instagram_df.sort_values("Data")
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=ig_daily["Data"], y=ig_daily["Alcance"],
+                name="Alcance", marker_color=INSTA_PURPLE, opacity=0.5, yaxis="y"))
+            fig.add_trace(go.Scatter(x=ig_daily["Data"], y=ig_daily["Interacoes Totais"],
+                name="Interações", line=dict(color=INSTA_ORANGE, width=3), yaxis="y2"))
+            fig.update_layout(template="plotly_white", height=340, margin=dict(t=20,b=30),
+                yaxis=dict(title="Alcance"),
+                yaxis2=dict(title="Interações", overlaying="y", side="right"),
+                legend=dict(orientation="h", y=1.12))
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Curtidas + Comentários + Compartilhamentos
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(x=ig_daily["Data"], y=ig_daily["Curtidas"],
+                name="Curtidas", line=dict(color=META_PINK, width=2), fill="tozeroy", fillcolor="rgba(225,48,108,0.1)"))
+            fig2.add_trace(go.Scatter(x=ig_daily["Data"], y=ig_daily["Compartilhamentos"],
+                name="Compartilhamentos", line=dict(color=INSTA_PURPLE, width=2)))
+            fig2.add_trace(go.Scatter(x=ig_daily["Data"], y=ig_daily["Salvos"],
+                name="Salvos", line=dict(color=GOLD, width=2)))
+            fig2.update_layout(template="plotly_white", height=300, margin=dict(t=20,b=30),
+                yaxis_title="Quantidade", legend=dict(orientation="h", y=1.12))
+            st.plotly_chart(fig2, use_container_width=True)
+
+        # ── Posts que Melhor Performaram ──
+        if not instagram_media_df.empty:
+            sec("Posts que Melhor Performaram")
+            st.caption("Conteúdos orgânicos com maior engajamento no período.")
+            media_sorted = instagram_media_df.sort_values("Engajamento", ascending=False)
+
+            col1, col2 = st.columns([3, 2])
+            with col1:
+                display_cols = ["Post", "Tipo", "Alcance", "Engajamento", "Curtidas", "Comentarios", "Salvos", "Compartilhamentos"]
+                available = [c for c in display_cols if c in media_sorted.columns]
+                fmt_m = {"Alcance": "{:,.0f}", "Engajamento": "{:,.0f}", "Curtidas": "{:,.0f}",
+                         "Comentarios": "{:,.0f}", "Salvos": "{:,.0f}", "Compartilhamentos": "{:,.0f}",
+                         "Visualizacoes": "{:,.0f}"}
+                st.dataframe(
+                    media_sorted[available].style.format({k: v for k, v in fmt_m.items() if k in available}, na_rep="—"),
+                    use_container_width=True, hide_index=True,
+                )
+            with col2:
+                top_media = media_sorted.head(8).copy()
+                top_media["Post_short"] = top_media["Post"].str[:35]
+                fig = go.Figure(go.Bar(
+                    y=top_media["Post_short"], x=top_media["Engajamento"], orientation="h",
+                    marker_color=INSTA_PURPLE, text=top_media["Engajamento"].astype(int).astype(str),
+                    textposition="auto",
+                ))
+                fig.update_layout(height=320, margin=dict(t=10,b=20,l=10), template="plotly_white",
+                    yaxis=dict(autorange="reversed"), xaxis_title="Engajamento total")
+                st.plotly_chart(fig, use_container_width=True)
+
+        # ── Destaques & Recomendações Instagram ──
+        sec("Destaques & Recomendações — Instagram Orgânico")
+        ig_insights, ig_alerts = [], []
+
+        if ig_eng_rate > 5:
+            ig_insights.append(f"<b>Taxa de engajamento de {ig_eng_rate:.2f}%</b> — excelente! Acima da média do setor de moda nupcial (~2-3%). O conteúdo está ressoando fortemente com a audiência.")
+        elif ig_eng_rate > 2:
+            ig_insights.append(f"<b>Taxa de engajamento de {ig_eng_rate:.2f}%</b> — saudável para o setor. Continue apostando nos formatos que geram mais salvos e compartilhamentos.")
+        else:
+            ig_alerts.append(f"<b>Taxa de engajamento de {ig_eng_rate:.2f}%</b> — abaixo da média. Teste horários diferentes de postagem e formatos como Reels e Carrosséis.")
+
+        if ig_shares > ig_saves:
+            ig_insights.append(f"<b>{ig_shares:,.0f} compartilhamentos vs {ig_saves:,.0f} salvos</b> — o conteúdo está sendo disseminado ativamente. Ótimo para alcance orgânico.")
+        elif ig_saves > ig_shares:
+            ig_insights.append(f"<b>{ig_saves:,.0f} salvos vs {ig_shares:,.0f} compartilhamentos</b> — o conteúdo é considerado referência. Noivas estão salvando para consultar depois.")
+
+        if ig_followers > 0:
+            cost_per_follow = 0
+            avg_daily_followers = ig_followers / max(len(instagram_df), 1)
+            if avg_daily_followers > 60:
+                ig_insights.append(f"<b>+{ig_followers:,.0f} novos seguidores</b> (~{avg_daily_followers:.0f}/dia) — crescimento orgânico forte.")
+            else:
+                ig_alerts.append(f"<b>+{ig_followers:,.0f} novos seguidores</b> (~{avg_daily_followers:.0f}/dia) — considere mais Reels e collabs para acelerar o crescimento.")
+
+        if ig_alerts:
+            st.markdown("##### ⚠️ Pontos de Atenção")
+            for a in ig_alerts:
+                st.markdown(f'<div class="alert-box">{a}</div>', unsafe_allow_html=True)
+
+        if ig_insights:
+            st.markdown("##### ✅ Destaques do Período")
+            for i in ig_insights:
+                st.markdown(f'<div class="ok-box">{i}</div>', unsafe_allow_html=True)
+
+        ig_tests = [
+            ("🧪 Reels de provas de noiva", "Vídeos curtos mostrando o momento da prova geram alta emoção e compartilhamento. Reels têm 2-3x mais alcance que posts estáticos."),
+            ("🧪 Carrosséis educativos", "Posts como 'Guia de tecidos para noivas' ou 'Como escolher o véu perfeito' geram alto número de salvos e posicionam como autoridade."),
+            ("🧪 Conteúdo com noivas reais", "Depoimentos e fotos de noivas reais geram mais confiança e engajamento que fotos de catálogo."),
+            ("🧪 Stories interativos com enquetes", "Enquetes como 'Qual vestido você prefere?' e caixinhas de perguntas aumentam respostas e fortalecem o relacionamento com seguidoras."),
+        ]
+
+        st.markdown("##### 🔬 Testes Recomendados")
+        cols_ig = st.columns(2)
+        for i, (title, desc) in enumerate(ig_tests):
+            with cols_ig[i % 2]:
                 st.markdown(f'<div class="test-card"><div class="t-title">{title}</div><div class="t-desc">{desc}</div></div>', unsafe_allow_html=True)
 
 # ── Footer ──
