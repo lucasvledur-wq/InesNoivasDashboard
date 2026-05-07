@@ -242,8 +242,15 @@ with tab_google:
             st.plotly_chart(fig, use_container_width=True)
 
     # ── Keywords ──
+    kw_fallback = False
+    if keywords_df.empty:
+        keywords_df = load_keywords(30)
+        if not keywords_df.empty:
+            kw_fallback = True
     if not keywords_df.empty:
         sec("Palavras-chave que mais geraram leads")
+        if kw_fallback:
+            st.caption(f"⚠️ Dados de keywords disponíveis apenas para os últimos 30 dias. Período selecionado: {period} dias.")
         kw_display = keywords_df[keywords_df["Conversões"] > 0].copy() if "Conversões" in keywords_df.columns else pd.DataFrame()
         if not kw_display.empty:
             col1, col2 = st.columns([3, 2])
@@ -478,6 +485,61 @@ with tab_ga4:
                     ga4_channels_df[ch_av].sort_values("Sessions", ascending=False).style.format(ch_fmt, na_rep="—"),
                     use_container_width=True, hide_index=True, height=300,
                 )
+
+        # ── Destaques & Recomendações GA4 ──
+        sec("Destaques & Recomendações — Landing Page")
+
+        ga4_insights, ga4_alerts = [], []
+
+        if not ga4_daily_df.empty:
+            if avg_bounce > 50:
+                ga4_alerts.append(f"<b>Bounce rate de {avg_bounce:.0f}%</b> — mais da metade dos visitantes sai sem interagir. A página pode estar lenta ou o conteúdo acima da dobra não está chamando atenção.")
+            elif avg_bounce < 35:
+                ga4_insights.append(f"<b>Bounce rate de {avg_bounce:.0f}%</b> — excelente retenção. Os visitantes estão engajando com o conteúdo.")
+
+            if avg_session_s > 0:
+                if avg_session_s < 60:
+                    ga4_alerts.append(f"<b>Tempo médio de sessão de {int(avg_session_s)}s</b> — muito baixo. Os visitantes não estão explorando o site. Teste conteúdo mais visual (fotos de vestidos, vídeos) logo no topo.")
+                elif avg_session_s > 180:
+                    ga4_insights.append(f"<b>Tempo médio de {int(avg_session_s//60)}m{int(avg_session_s%60)}s</b> — ótimo engajamento. Os visitantes estão explorando bem o conteúdo.")
+
+            if avg_eng < 50:
+                ga4_alerts.append(f"<b>Taxa de engajamento de {avg_eng:.0f}%</b> — menos da metade dos visitantes interage. Adicione CTAs mais visíveis e seções interativas.")
+
+        if not ga4_pages_df.empty and "Whatsapp LP" in ga4_pages_df.columns:
+            top_page = ga4_pages_df.sort_values("Pageviews", ascending=False).iloc[0]
+            wp = top_page.get("Whatsapp LP", 0)
+            pv = top_page.get("Pageviews", 1)
+            if pv > 0:
+                conv_rate = wp / pv * 100
+                if conv_rate < 5:
+                    ga4_alerts.append(f"<b>Página principal ({top_page['Page']}) converte apenas {conv_rate:.1f}% em WhatsApp</b> — teste mover o botão para o topo da página, usar cor contrastante e texto urgente ('Agende agora').")
+                elif conv_rate > 10:
+                    ga4_insights.append(f"<b>Página principal ({top_page['Page']}) converte {conv_rate:.1f}% em WhatsApp</b> — excelente taxa de conversão.")
+
+        if ga4_alerts:
+            st.markdown("##### ⚠️ Pontos de Atenção")
+            for a in ga4_alerts:
+                st.markdown(f'<div class="alert-box">{a}</div>', unsafe_allow_html=True)
+
+        if ga4_insights:
+            st.markdown("##### ✅ Destaques do Período")
+            for i in ga4_insights:
+                st.markdown(f'<div class="ok-box">{i}</div>', unsafe_allow_html=True)
+
+        st.markdown("##### 🔬 Testes Recomendados para a Landing Page")
+        lp_tests = [
+            ("🧪 Botão WhatsApp fixo no topo", "Adicione um botão flutuante de WhatsApp que acompanhe o scroll. Noivas que navegam em celular precisam de acesso rápido — cada segundo a mais reduz a chance de contato."),
+            ("🧪 Galeria de vestidos acima da dobra", "Troque banners genéricos por uma galeria rotativa dos vestidos mais populares. A primeira impressão visual determina se a noiva continua ou sai."),
+            ("🧪 Prova social com fotos de noivas reais", "Adicione uma seção 'Noivas Inês' com fotos e depoimentos curtos. Noivas confiam mais na experiência de outras noivas do que em descrições da loja."),
+            ("🧪 Página /vestido-de-festas com CTA próprio", "Crie um formulário/botão específico para festas (15 anos, madrinhas). Misturar com noivas dilui a mensagem e reduz conversão."),
+            ("🧪 Velocidade de carregamento mobile", "Teste a velocidade no PageSpeed Insights. Sites de moda com imagens pesadas perdem até 40% dos visitantes se demoram mais de 3s para carregar."),
+            ("🧪 Formulário simplificado (nome + WhatsApp)", "Reduza os campos do formulário para apenas nome e número. Cada campo extra reduz a taxa de conversão em ~10%."),
+        ]
+        cols_lp = st.columns(2)
+        for i, (title, desc) in enumerate(lp_tests):
+            with cols_lp[i % 2]:
+                st.markdown(f'<div class="test-card"><div class="t-title">{title}</div><div class="t-desc">{desc}</div></div>', unsafe_allow_html=True)
 
 
 # =============================================================================
