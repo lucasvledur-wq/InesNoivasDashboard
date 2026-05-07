@@ -121,11 +121,8 @@ with st.sidebar:
 
 
 def kpi(label, value, style="", sub=""):
-    return f'''<div class="kpi {style}">
-        <div class="kpi-label">{label}</div>
-        <div class="kpi-value">{value}</div>
-        {"<div class='kpi-sub'>" + sub + "</div>" if sub else ""}
-    </div>'''
+    sub_html = f"<div class='kpi-sub'>{sub}</div>" if sub else ""
+    return f'<div class="kpi {style}"><div class="kpi-label">{label}</div><div class="kpi-value">{value}</div>{sub_html}</div>'
 
 
 def sec(title):
@@ -139,7 +136,7 @@ ga4_pages_df   = load_ga4_pages(period)
 ga4_daily_df   = load_ga4_daily(period)
 ga4_channels_df = load_ga4_channels(period)
 ads_daily_df   = load_ads_daily(period)
-keywords_df    = load_keywords(30)
+keywords_df    = load_keywords(period)
 meta_df        = load_meta(period)
 
 # ── Main tabs ──
@@ -395,13 +392,16 @@ with tab_ga4:
             tot_users     = ga4_daily_df["Users"].sum() if "Users" in ga4_daily_df.columns else 0
             avg_eng       = ga4_daily_df["Engagement Rate (%)"].mean() if "Engagement Rate (%)" in ga4_daily_df.columns else 0
             avg_bounce    = ga4_daily_df["Bounce Rate (%)"].mean() if "Bounce Rate (%)" in ga4_daily_df.columns else 0
+            avg_session_s = ga4_daily_df["Avg. Session (s)"].mean() if "Avg. Session (s)" in ga4_daily_df.columns else 0
+            session_fmt   = f"{int(avg_session_s // 60)}m {int(avg_session_s % 60)}s" if avg_session_s > 0 else "—"
 
-            c = st.columns(4)
+            c = st.columns(5)
             c[0].markdown(kpi("👥 Visitas ao Site", f"{tot_sessions:,}", sub="sessões no período"), unsafe_allow_html=True)
             c[1].markdown(kpi("🙋 Pessoas Únicas", f"{tot_users:,}", sub="usuários distintos"), unsafe_allow_html=True)
-            c[2].markdown(kpi("💬 Engajamento", f"{avg_eng:.0f}%", "green" if avg_eng > 60 else "",
+            c[2].markdown(kpi("⏱️ Tempo Médio", session_fmt, sub="por sessão"), unsafe_allow_html=True)
+            c[3].markdown(kpi("💬 Engajamento", f"{avg_eng:.0f}%", "green" if avg_eng > 60 else "",
                 sub="ficaram e interagiram"), unsafe_allow_html=True)
-            c[3].markdown(kpi("🚪 Saíram Sem Interagir", f"{avg_bounce:.0f}%",
+            c[4].markdown(kpi("🚪 Saíram Sem Interagir", f"{avg_bounce:.0f}%",
                 "red" if avg_bounce > 40 else "green", sub="bounce rate médio"), unsafe_allow_html=True)
 
         # ── Performance por Página ──
@@ -517,15 +517,22 @@ with tab_meta:
         # ── Performance por Conjunto de Anúncios ──
         if "Conjunto" in meta_df.columns:
             sec("Performance por Conjunto de Anúncios")
-            meta_cols = ["Conjunto","Investimento (R$)","Impressões","Alcance","CTR (%)","Cliques no Link",
-                         "Mensagens WhatsApp","Visitas ao Perfil","Seguidores Novos"]
-            meta_av = [c for c in meta_cols if c in meta_df.columns]
+            sum_cols = [c for c in ["Investimento (R$)","Impressões","Alcance","Cliques no Link",
+                                    "Mensagens WhatsApp","Visitas ao Perfil","Seguidores Novos","Engajamento"]
+                        if c in meta_df.columns]
+            meta_grouped = meta_df.groupby("Conjunto")[sum_cols].sum().reset_index()
+            if "Cliques no Link" in meta_grouped.columns and "Impressões" in meta_grouped.columns:
+                meta_grouped["CTR (%)"] = (meta_grouped["Cliques no Link"] / meta_grouped["Impressões"] * 100).round(2)
             meta_fmt = {"Investimento (R$)": "R$ {:.2f}", "CTR (%)": "{:.1f}%",
                         "Impressões": "{:,.0f}", "Alcance": "{:,.0f}",
-                        "Cliques no Link": "{:,.0f}", "Mensagens WhatsApp": "{:,.0f}"}
+                        "Cliques no Link": "{:,.0f}", "Mensagens WhatsApp": "{:,.0f}",
+                        "Visitas ao Perfil": "{:,.0f}", "Engajamento": "{:,.0f}"}
+            disp_cols = ["Conjunto"] + [c for c in ["Investimento (R$)","Impressões","Alcance","CTR (%)","Cliques no Link",
+                                                     "Mensagens WhatsApp","Visitas ao Perfil","Engajamento"]
+                                        if c in meta_grouped.columns]
             st.dataframe(
-                meta_df[meta_av].sort_values("Investimento (R$)", ascending=False).style.format(
-                    {k: v for k, v in meta_fmt.items() if k in meta_av}, na_rep="—"),
+                meta_grouped[disp_cols].sort_values("Investimento (R$)", ascending=False).style.format(
+                    {k: v for k, v in meta_fmt.items() if k in meta_grouped.columns}, na_rep="—"),
                 use_container_width=True, hide_index=True,
             )
 
